@@ -2,10 +2,11 @@
 
 ## Overview
 
-The `ValueHelperWrapper` is a custom SAP UI5 control that provides an enhanced value help dialog functionality. It wraps the standard `sap.m.MultiInput` control and extends it with powerful filtering, selection, and configuration capabilities through a programmatically created value help dialog.
+The `ValueHelperWrapper` is a custom SAP UI5 control that provides an enhanced value help dialog functionality. It wraps the standard `sap.m.MultiInput` control and extends it with powerful filtering, selection, and configuration capabilities through a programmatically created value help dialog. The control now includes **two-way data binding** support for automatic token synchronization with your JSON model.
 
 ## Features
 
+- **Two-Way Data Binding**: Automatically synchronize tokens with your JSON model
 - **Dynamic Configuration**: Fully configurable through a JSON configuration object
 - **Smart Filtering**: Built-in filter bar with customizable filter fields
 - **Single/Multi Selection**: Support for both single and multiple selection modes
@@ -58,7 +59,16 @@ var valueHelpConfig = {
         filter: true
     }],
     selectedKey: "Vhkey",
-    selectedDescription: "AdditionText1"
+    selectedDescription: "AdditionText1",
+    
+    // NEW: Optional binding configuration
+    binding: {
+        path: "/selectedCountry",
+        idProperty: "id",
+        descProperty: "desc",
+        multiSelect: false,
+        modelName: "viewModel"
+    }
 };
 ```
 
@@ -71,6 +81,7 @@ var valueHelpConfig = {
 | `fields` | Object[] | Yes | Array of field definitions for table columns |
 | `selectedKey` | String | Yes | Property name to use as the token key |
 | `selectedDescription` | String | Yes | Property name to use as the token display text |
+| `binding` | Object | No | Binding configuration for automatic token synchronization |
 
 ### Field Configuration
 
@@ -82,9 +93,21 @@ Each field object in the `fields` array supports:
 | `label` | String | Yes | Display label for the column header |
 | `filter` | Boolean | No | Whether this field should appear in the filter bar |
 
+### Binding Configuration (Optional)
+
+The `binding` object enables automatic synchronization between tokens and your model:
+
+| Property | Type | Required | Default | Description |
+|----------|------|----------|---------|-------------|
+| `path` | String | Yes | - | The binding path in your model (e.g., `/selectedCountry`) |
+| `idProperty` | String | Yes | - | The property name for the token key in your model object |
+| `descProperty` | String | Yes | - | The property name for the token text in your model object |
+| `multiSelect` | Boolean | No | `false` | Set to `true` if binding to an array for multi-selection |
+| `modelName` | String | No | `"viewModel"` | The name of the model to bind to |
+
 ## Usage Examples
 
-### 1. Basic Setup in Controller
+### 1. Basic Setup in Controller (Without Binding)
 
 ```javascript
 onInit: function() {
@@ -122,7 +145,85 @@ onInit: function() {
 }
 ```
 
-### 2. XML View Declaration
+### 2. Setup with Two-Way Binding (Single Selection)
+
+```javascript
+onInit: function() {
+    var valueHelpConfig = {
+        entitySet: "/CountrySet",
+        fields: [{
+            code: "CountryId",
+            label: "Country ID",
+            filter: true
+        }, {
+            code: "CountryName",
+            label: "Country Name",
+            filter: true
+        }],
+        selectedKey: "CountryId",
+        selectedDescription: "CountryName",
+        
+        // Enable binding for automatic synchronization
+        binding: {
+            path: "/selectedCountry",
+            idProperty: "id",
+            descProperty: "name",
+            multiSelect: false
+        }
+    };
+
+    var oViewModel = new JSONModel({
+        countryConfig: valueHelpConfig,
+        selectedCountry: {
+            id: "US",
+            name: "United States"
+        }
+    });
+
+    this.getView().setModel(oViewModel, "viewModel");
+}
+```
+
+### 3. Setup with Two-Way Binding (Multi-Selection)
+
+```javascript
+onInit: function() {
+    var valueHelpConfig = {
+        entitySet: "/SupplierSet",
+        fields: [{
+            code: "SupplierId",
+            label: "Supplier ID",
+            filter: true
+        }, {
+            code: "SupplierName",
+            label: "Supplier Name",
+            filter: true
+        }],
+        selectedKey: "SupplierId",
+        selectedDescription: "SupplierName",
+        
+        // Enable binding for multi-selection
+        binding: {
+            path: "/selectedSuppliers",
+            idProperty: "id",
+            descProperty: "name",
+            multiSelect: true  // Array binding
+        }
+    };
+
+    var oViewModel = new JSONModel({
+        supplierConfig: valueHelpConfig,
+        selectedSuppliers: [
+            { id: "SUP001", name: "Supplier A" },
+            { id: "SUP002", name: "Supplier B" }
+        ]
+    });
+
+    this.getView().setModel(oViewModel, "viewModel");
+}
+```
+
+### 4. XML View Declaration
 
 ```xml
 <yourNamespace:ValueHelperWrapper
@@ -137,7 +238,7 @@ onInit: function() {
     placeholder="Select Country..." />
 ```
 
-### 3. Programmatic Usage
+### 5. Programmatic Usage
 
 ```javascript
 // Open value help dialog programmatically
@@ -172,6 +273,28 @@ onGetCurrentSelection: function() {
 }
 ```
 
+### 6. Programmatic Model Updates (With Binding)
+
+```javascript
+// Update the model - control automatically reflects changes
+onUpdateCountry: function() {
+    var oViewModel = this.getView().getModel("viewModel");
+    
+    oViewModel.setProperty("/selectedCountry", {
+        id: "DE",
+        name: "Germany"
+    });
+    // Control tokens are automatically updated!
+},
+
+// Clear selection
+onClearCountry: function() {
+    var oViewModel = this.getView().getModel("viewModel");
+    oViewModel.setProperty("/selectedCountry", null);
+    // Control tokens are automatically cleared!
+}
+```
+
 ## Control Properties
 
 ### Custom Properties
@@ -200,49 +323,11 @@ The control inherits all properties from `sap.m.MultiInput`, including:
 
 | Event | Parameters | Description |
 |-------|------------|-------------|
-| `selectionChange` | `selectedTokens: sap.m.Token[]` | Fired when user confirms selection |
+| `selectionChange` | `selectedTokens: sap.m.Token[]` | Fired when user confirms selection in the dialog |
 
 ### Inherited Events
 
 All `sap.m.MultiInput` events are supported except `valueHelpRequest` (handled internally).
-
-## Public Methods
-
-### Token Management
-```javascript
-// Get all tokens
-var aTokens = oControl.getTokens();
-
-// Set tokens
-oControl.setTokens(aTokenArray);
-
-// Add single token
-oControl.addToken(oToken);
-
-// Remove specific token
-oControl.removeToken(oToken);
-
-// Clear all tokens
-oControl.clearTokens();
-```
-
-### Dialog Management
-```javascript
-// Open value help dialog
-oControl.openValueHelpDialog();
-```
-
-### Property Management
-```javascript
-// Set busy state
-oControl.setBusy(true);
-
-// Set busy delay
-oControl.setBusyIndicatorDelay(500);
-
-// Set editable state
-oControl.setEditable(false);
-```
 
 ## Hidden Property Usage
 
@@ -293,154 +378,6 @@ onCountrySelectionChange: function(oEvent) {
 }
 ```
 
-### Triggering from ComboBox Selection
-
-```xml
-<!-- ComboBox that triggers different value helps based on selection -->
-<ComboBox
-    id="entityTypeCombo"
-    items="{viewModel>/entityTypes}"
-    selectionChange="onEntityTypeChange"
-    placeholder="Select Entity Type">
-    <core:Item key="{key}" text="{text}" />
-</ComboBox>
-
-<!-- Hidden value helpers for different entity types -->
-<yourNamespace:ValueHelperWrapper
-    id="hiddenCountryHelper"
-    config="{viewModel>/countryConfig}"
-    hidden="true"
-    selectionChange="onEntitySelectionChange" />
-
-<yourNamespace:ValueHelperWrapper
-    id="hiddenCityHelper"
-    config="{viewModel>/cityConfig}"
-    hidden="true"
-    selectionChange="onEntitySelectionChange" />
-
-<yourNamespace:ValueHelperWrapper
-    id="hiddenCustomerHelper"
-    config="{viewModel>/customerConfig}"
-    hidden="true"
-    selectionChange="onEntitySelectionChange" />
-```
-
-```javascript
-// Controller logic for dynamic value help based on ComboBox selection
-onEntityTypeChange: function(oEvent) {
-    var sSelectedKey = oEvent.getParameter("selectedItem").getKey();
-    var oValueHelper;
-    
-    switch(sSelectedKey) {
-        case "country":
-            oValueHelper = this.byId("hiddenCountryHelper");
-            break;
-        case "city":
-            oValueHelper = this.byId("hiddenCityHelper");
-            break;
-        case "customer":
-            oValueHelper = this.byId("hiddenCustomerHelper");
-            break;
-    }
-    
-    if (oValueHelper) {
-        // Open the appropriate value help dialog
-        oValueHelper.openValueHelpDialog();
-    }
-},
-
-// Common handler for all entity selections
-onEntitySelectionChange: function(oEvent) {
-    var aSelectedTokens = oEvent.getParameter("selectedTokens");
-    var oSource = oEvent.getSource();
-    
-    if (aSelectedTokens.length > 0) {
-        var oToken = aSelectedTokens[0];
-        
-        // Update UI based on which value helper was used
-        if (oSource.getId().includes("Country")) {
-            this.getModel("viewModel").setProperty("/selectedCountry", {
-                key: oToken.getKey(),
-                text: oToken.getText()
-            });
-        } else if (oSource.getId().includes("City")) {
-            this.getModel("viewModel").setProperty("/selectedCity", {
-                key: oToken.getKey(),
-                text: oToken.getText()
-            });
-        } else if (oSource.getId().includes("Customer")) {
-            this.getModel("viewModel").setProperty("/selectedCustomer", {
-                key: oToken.getKey(),
-                text: oToken.getText()
-            });
-        }
-    }
-}
-```
-
-### Multiple Hidden Value Helpers Pattern
-
-```javascript
-// Controller setup for multiple hidden value helpers
-onInit: function() {
-    // Define configurations for different entities
-    var oConfigs = {
-        country: {
-            entitySet: "/CountrySet",
-            fields: [
-                {code: "CountryCode", label: "Code", filter: true},
-                {code: "CountryName", label: "Name", filter: true}
-            ],
-            selectedKey: "CountryCode",
-            selectedDescription: "CountryName"
-        },
-        customer: {
-            entitySet: "/CustomerSet",
-            fields: [
-                {code: "CustomerID", label: "ID", filter: true},
-                {code: "CustomerName", label: "Name", filter: true},
-                {code: "City", label: "City", filter: true}
-            ],
-            selectedKey: "CustomerID",
-            selectedDescription: "CustomerName"
-        },
-        product: {
-            entitySet: "/ProductSet",
-            fields: [
-                {code: "ProductCode", label: "Code", filter: true},
-                {code: "ProductName", label: "Name", filter: true},
-                {code: "Category", label: "Category", filter: true}
-            ],
-            selectedKey: "ProductCode",
-            selectedDescription: "ProductName"
-        }
-    };
-    
-    this.oViewModel = new JSONModel({
-        busy: false,
-        delay: 100,
-        countryConfig: oConfigs.country,
-        customerConfig: oConfigs.customer,
-        productConfig: oConfigs.product
-    });
-    
-    this.getView().setModel(this.oViewModel, "viewModel");
-},
-
-// Generic method to open any hidden value helper
-openValueHelp: function(sEntityType) {
-    var sHelperId = "hidden" + sEntityType.charAt(0).toUpperCase() + 
-                   sEntityType.slice(1) + "Helper";
-    var oValueHelper = this.byId(sHelperId);
-    
-    if (oValueHelper) {
-        oValueHelper.openValueHelpDialog();
-    } else {
-        console.error("Value helper not found: " + sHelperId);
-    }
-}
-```
-
 ### Benefits of Hidden Mode
 
 1. **Flexible UI Design**: Trigger value help from any UI element without being constrained by the MultiInput appearance
@@ -478,7 +415,13 @@ var multiSelectConfig = {
         filter: false
     }],
     selectedKey: "EmployeeId",
-    selectedDescription: "FirstName"
+    selectedDescription: "FirstName",
+    binding: {
+        path: "/selectedEmployees",
+        idProperty: "id",
+        descProperty: "name",
+        multiSelect: true
+    }
 };
 ```
 
@@ -501,7 +444,13 @@ var singleSelectConfig = {
         filter: true
     }],
     selectedKey: "ProductCode", 
-    selectedDescription: "ProductName"
+    selectedDescription: "ProductName",
+    binding: {
+        path: "/selectedProduct",
+        idProperty: "code",
+        descProperty: "name",
+        multiSelect: false
+    }
 };
 ```
 
@@ -513,6 +462,8 @@ var singleSelectConfig = {
 4. **Description Selection**: Use human-readable properties for `selectedDescription`
 5. **Busy State**: Configure appropriate `busyIndicatorDelay` based on expected response times
 6. **Memory Management**: The control automatically cleans up dialog resources on close
+7. **Binding Configuration**: Use binding when you need automatic synchronization; use manual token management for more control
+8. **Model Structure**: When using binding, ensure your model objects match the `idProperty` and `descProperty` names
 
 ## Troubleshooting
 
@@ -523,6 +474,7 @@ var singleSelectConfig = {
 3. **Columns not displaying**: Check that field `code` values match OData property names
 4. **Selection not working**: Ensure `selectedKey` property exists in your data
 5. **Filtering not working**: Verify that fields with `filter: true` have valid property names
+6. **Binding not synchronizing**: Check that the binding path exists in your model and property names match
 
 ### Debug Tips
 
@@ -537,6 +489,13 @@ console.log("Tokens:", oControl.getTokens());
 oControl.attachSelectionChange(function(oEvent) {
     console.log("Selection changed:", oEvent.getParameters());
 });
+
+// Check binding configuration
+console.log("Binding config:", oControl.getConfig().binding);
+
+// Verify model data
+var oViewModel = this.getView().getModel("viewModel");
+console.log("Model data:", oViewModel.getData());
 ```
 
 ## Browser Support
@@ -553,3 +512,423 @@ The control supports all browsers supported by SAP UI5, including:
 - SAP UI5 1.60+
 - Tested with UI5 versions up to 1.120+
 - Compatible with both Fiori 2.0 and Fiori 3.0 themes
+
+---
+
+## Public API Reference
+
+### Token Management Methods
+
+#### `getTokens()`
+Returns all currently selected tokens.
+
+**Signature:**
+```javascript
+getTokens() → sap.m.Token[]
+```
+
+**Example:**
+```javascript
+var aTokens = oControl.getTokens();
+console.log("Token count:", aTokens.length);
+```
+
+---
+
+#### `setTokens(aTokens)`
+Sets the tokens for the control, replacing any existing tokens.
+
+**Signature:**
+```javascript
+setTokens(aTokens: sap.m.Token[]) → this
+```
+
+**Parameters:**
+- `aTokens` (sap.m.Token[]): Array of Token objects to set
+
+**Example:**
+```javascript
+var oToken = new sap.m.Token({
+    key: "US",
+    text: "United States"
+});
+oControl.setTokens([oToken]);
+```
+
+---
+
+#### `addToken(oToken)`
+Adds a single token to the control.
+
+**Signature:**
+```javascript
+addToken(oToken: sap.m.Token) → this
+```
+
+**Parameters:**
+- `oToken` (sap.m.Token): The token to add
+
+**Example:**
+```javascript
+var oToken = new sap.m.Token({
+    key: "DE",
+    text: "Germany"
+});
+oControl.addToken(oToken);
+```
+
+---
+
+#### `removeToken(oToken)`
+Removes a specific token from the control.
+
+**Signature:**
+```javascript
+removeToken(oToken: sap.m.Token) → this
+```
+
+**Parameters:**
+- `oToken` (sap.m.Token): The token to remove
+
+**Example:**
+```javascript
+var aTokens = oControl.getTokens();
+if (aTokens.length > 0) {
+    oControl.removeToken(aTokens[0]);
+}
+```
+
+---
+
+#### `removeAllTokens()`
+Removes all tokens from the control.
+
+**Signature:**
+```javascript
+removeAllTokens() → this
+```
+
+**Example:**
+```javascript
+oControl.removeAllTokens();
+```
+
+---
+
+#### `clearTokens()`
+Clears all tokens from the control (alias for `removeAllTokens()`).
+
+**Signature:**
+```javascript
+clearTokens() → this
+```
+
+**Example:**
+```javascript
+oControl.clearTokens();
+```
+
+---
+
+### Dialog Management Methods
+
+#### `openValueHelpDialog()`
+Opens the value help dialog programmatically.
+
+**Signature:**
+```javascript
+openValueHelpDialog() → void
+```
+
+**Example:**
+```javascript
+oControl.openValueHelpDialog();
+```
+
+---
+
+### Property Management Methods
+
+#### `setBusy(bBusy)`
+Sets the busy state of the control's table.
+
+**Signature:**
+```javascript
+setBusy(bBusy: boolean) → this
+```
+
+**Parameters:**
+- `bBusy` (boolean): `true` to show busy indicator, `false` to hide it
+
+**Example:**
+```javascript
+oControl.setBusy(true);
+// ... perform operation
+oControl.setBusy(false);
+```
+
+---
+
+#### `getBusy()`
+Returns the current busy state.
+
+**Signature:**
+```javascript
+getBusy() → boolean
+```
+
+**Example:**
+```javascript
+if (oControl.getBusy()) {
+    console.log("Control is busy");
+}
+```
+
+---
+
+#### `setBusyIndicatorDelay(iDelay)`
+Sets the delay before showing the busy indicator.
+
+**Signature:**
+```javascript
+setBusyIndicatorDelay(iDelay: integer) → this
+```
+
+**Parameters:**
+- `iDelay` (integer): Delay in milliseconds
+
+**Example:**
+```javascript
+oControl.setBusyIndicatorDelay(500);
+```
+
+---
+
+#### `getBusyIndicatorDelay()`
+Returns the busy indicator delay.
+
+**Signature:**
+```javascript
+getBusyIndicatorDelay() → integer
+```
+
+**Example:**
+```javascript
+var iDelay = oControl.getBusyIndicatorDelay();
+console.log("Busy delay:", iDelay, "ms");
+```
+
+---
+
+#### `setEditable(bEditable)`
+Sets whether the control is editable.
+
+**Signature:**
+```javascript
+setEditable(bEditable: boolean) → this
+```
+
+**Parameters:**
+- `bEditable` (boolean): `true` to make editable, `false` to make read-only
+
+**Example:**
+```javascript
+oControl.setEditable(false);
+```
+
+---
+
+#### `getEditable()`
+Returns whether the control is editable.
+
+**Signature:**
+```javascript
+getEditable() → boolean
+```
+
+**Example:**
+```javascript
+if (oControl.getEditable()) {
+    console.log("Control is editable");
+}
+```
+
+---
+
+#### `setConfig(oConfig)`
+Sets the configuration object for the control.
+
+**Signature:**
+```javascript
+setConfig(oConfig: object) → this
+```
+
+**Parameters:**
+- `oConfig` (object): Configuration object with entitySet, fields, selectedKey, etc.
+
+**Example:**
+```javascript
+var oNewConfig = {
+    entitySet: "/NewSet",
+    fields: [...],
+    selectedKey: "Id",
+    selectedDescription: "Name"
+};
+oControl.setConfig(oNewConfig);
+```
+
+---
+
+#### `getConfig()`
+Returns the current configuration object.
+
+**Signature:**
+```javascript
+getConfig() → object
+```
+
+**Example:**
+```javascript
+var oConfig = oControl.getConfig();
+console.log("Entity set:", oConfig.entitySet);
+```
+
+---
+
+#### `setSingleMode(bSingleMode)`
+Sets whether the control operates in single selection mode.
+
+**Signature:**
+```javascript
+setSingleMode(bSingleMode: boolean) → this
+```
+
+**Parameters:**
+- `bSingleMode` (boolean): `true` for single selection, `false` for multi-selection
+
+**Example:**
+```javascript
+oControl.setSingleMode(true);
+```
+
+---
+
+#### `getSingleMode()`
+Returns whether the control is in single selection mode.
+
+**Signature:**
+```javascript
+getSingleMode() → boolean
+```
+
+**Example:**
+```javascript
+if (oControl.getSingleMode()) {
+    console.log("Single selection mode enabled");
+}
+```
+
+---
+
+#### `setHidden(bHidden)`
+Sets whether the control is hidden (invisible but functional).
+
+**Signature:**
+```javascript
+setHidden(bHidden: boolean) → this
+```
+
+**Parameters:**
+- `bHidden` (boolean): `true` to hide, `false` to show
+
+**Example:**
+```javascript
+oControl.setHidden(true);
+```
+
+---
+
+#### `getHidden()`
+Returns whether the control is hidden.
+
+**Signature:**
+```javascript
+getHidden() → boolean
+```
+
+**Example:**
+```javascript
+if (oControl.getHidden()) {
+    console.log("Control is hidden");
+}
+```
+
+---
+
+### Event Methods
+
+#### `attachSelectionChange(fnFunction, oListener)`
+Attaches a handler to the `selectionChange` event.
+
+**Signature:**
+```javascript
+attachSelectionChange(fnFunction: function, oListener?: object) → this
+```
+
+**Parameters:**
+- `fnFunction` (function): Handler function
+- `oListener` (object, optional): Context for the handler
+
+**Example:**
+```javascript
+oControl.attachSelectionChange(function(oEvent) {
+    var aTokens = oEvent.getParameter("selectedTokens");
+    console.log("Selection changed:", aTokens);
+});
+```
+
+---
+
+#### `detachSelectionChange(fnFunction, oListener)`
+Detaches a handler from the `selectionChange` event.
+
+**Signature:**
+```javascript
+detachSelectionChange(fnFunction: function, oListener?: object) → this
+```
+
+**Parameters:**
+- `fnFunction` (function): Handler function to remove
+- `oListener` (object, optional): Context for the handler
+
+**Example:**
+```javascript
+oControl.detachSelectionChange(myHandler);
+```
+
+---
+
+#### `fireSelectionChange(mArguments)`
+Fires the `selectionChange` event manually.
+
+**Signature:**
+```javascript
+fireSelectionChange(mArguments?: object) → this
+```
+
+**Parameters:**
+- `mArguments` (object, optional): Event parameters including `selectedTokens`
+
+**Example:**
+```javascript
+oControl.fireSelectionChange({
+    selectedTokens: oControl.getTokens()
+});
+```
+
+---
+
+## Summary
+
+The ValueHelperWrapper control provides a comprehensive solution for value help dialogs in SAP UI5 applications. With support for both manual token management and automatic two-way binding, it offers flexibility for various use cases while maintaining a clean and intuitive API.
+
