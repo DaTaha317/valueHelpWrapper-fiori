@@ -141,6 +141,10 @@ sap.ui.define(
         this._oMultiInput.addValidator(this._onMultiInputValidate);
         this.setAggregation("_multiInput", this._oMultiInput);
 
+        // Initialize binding-related properties
+        this._oBindingConfig = null;
+        this._bBindingInitialized = false;
+
         // Set up property forwarding
         this._setupPropertyForwarding();
         this._setupEventForwarding();
@@ -151,7 +155,242 @@ sap.ui.define(
         this._oView = this._getView();
         this._oConfig = this.getConfig() || {};
         this._applyHiddenStyle();
+
+        // Initialize binding if configured
+        if (!this._bBindingInitialized) {
+          this._initializeBinding();
+        }
       },
+
+      // ==================== NEW: Binding Implementation ====================
+
+      /**
+       * Initialize binding configuration and setup listeners
+       * @private
+       */
+      _initializeBinding: function () {
+        if (this._bBindingInitialized) {
+          return;
+        }
+
+        var oConfig = this.getConfig();
+        if (!oConfig || !oConfig.binding) {
+          this._bBindingInitialized = true;
+          return;
+        }
+
+        this._oBindingConfig = oConfig.binding;
+        this._bBindingInitialized = true;
+
+        // Setup model listener for changes
+        this._attachModelListener();
+
+        // Load initial data from model
+        this._loadTokensFromModel();
+      },
+
+      /**
+       * Attach listener to model property changes
+       * @private
+       */
+      _attachModelListener: function () {
+        if (!this._oBindingConfig) {
+          return;
+        }
+
+        var oModel = this._getBindingModel();
+        if (!oModel) {
+          return;
+        }
+
+        // Attach property change listener
+        oModel.attachPropertyChange(this._onBindingModelPropertyChange, this);
+      },
+
+      /**
+       * Detach listener from model property changes
+       * @private
+       */
+      _detachModelListener: function () {
+        if (!this._oBindingConfig) {
+          return;
+        }
+
+        var oModel = this._getBindingModel();
+        if (!oModel) {
+          return;
+        }
+
+        oModel.detachPropertyChange(this._onBindingModelPropertyChange, this);
+      },
+
+      /**
+       * Get the model for binding
+       * @private
+       * @returns {sap.ui.model.Model} The model instance
+       */
+      _getBindingModel: function () {
+        if (!this._oBindingConfig) {
+          return null;
+        }
+
+        var sModelName = this._oBindingConfig.modelName || "viewModel";
+        var oView = this._getView();
+
+        if (oView) {
+          return oView.getModel(sModelName);
+        }
+
+        return null;
+      },
+
+      /**
+       * Handle model property changes
+       * @private
+       * @param {sap.ui.base.Event} oEvent The property change event
+       */
+      _onBindingModelPropertyChange: function (oEvent) {
+        if (!this._oBindingConfig) {
+          return;
+        }
+
+        var sPath = oEvent.getParameter("path");
+        var sBindingPath = this._oBindingConfig.path;
+
+        // Check if the changed property is our binding path
+        if (sPath === sBindingPath || sPath.indexOf(sBindingPath) === 0) {
+          this._loadTokensFromModel();
+        }
+      },
+
+      /**
+       * Load tokens from model based on binding configuration
+       * @private
+       */
+      _loadTokensFromModel: function () {
+        if (!this._oBindingConfig) {
+          return;
+        }
+
+        var oModel = this._getBindingModel();
+        if (!oModel) {
+          return;
+        }
+
+        var sPath = this._oBindingConfig.path;
+        var oData = oModel.getProperty(sPath);
+
+        if (!oData) {
+          this._oMultiInput.setTokens([]);
+          return;
+        }
+
+        var aTokens = this._modelDataToTokens(oData);
+        this._oMultiInput.setTokens(aTokens);
+      },
+
+      /**
+       * Convert model data to Token objects
+       * @private
+       * @param {Object|Array} oData The model data
+       * @returns {sap.m.Token[]} Array of Token objects
+       */
+      _modelDataToTokens: function (oData) {
+        var aTokens = [];
+
+        if (!oData) {
+          return aTokens;
+        }
+
+        var sIdProperty = this._oBindingConfig.idProperty || "id";
+        var sDescProperty = this._oBindingConfig.descProperty || "desc";
+
+        // Handle array (multi-selection)
+        if (Array.isArray(oData)) {
+          oData.forEach(
+            function (oItem) {
+              if (oItem) {
+                var oToken = new Token({
+                  key: oItem[sIdProperty],
+                  text: oItem[sDescProperty] || oItem[sIdProperty]
+                });
+                aTokens.push(oToken);
+              }
+            }.bind(this)
+          );
+        } else if (typeof oData === "object") {
+          // Handle single object (single selection)
+          var oToken = new Token({
+            key: oData[sIdProperty],
+            text: oData[sDescProperty] || oData[sIdProperty]
+          });
+          aTokens.push(oToken);
+        }
+
+        return aTokens;
+      },
+
+      /**
+       * Convert Token objects to model data format
+       * @private
+       * @param {sap.m.Token[]} aTokens Array of Token objects
+       * @returns {Object|Array} Model data in expected format
+       */
+      _tokensToModelData: function (aTokens) {
+        if (!aTokens || aTokens.length === 0) {
+          return this._oBindingConfig.multiSelect ? [] : null;
+        }
+
+        var sIdProperty = this._oBindingConfig.idProperty || "id";
+        var sDescProperty = this._oBindingConfig.descProperty || "desc";
+        var bMultiSelect = this._oBindingConfig.multiSelect || false;
+
+        if (bMultiSelect) {
+          // Return array for multi-selection
+          return aTokens.map(
+            function (oToken) {
+              var oData = {};
+              oData[sIdProperty] = oToken.getKey();
+              oData[sDescProperty] = oToken.getText();
+              return oData;
+            }.bind(this)
+          );
+        } else {
+          // Return single object for single selection
+          if (aTokens.length > 0) {
+            var oToken = aTokens[0];
+            var oData = {};
+            oData[sIdProperty] = oToken.getKey();
+            oData[sDescProperty] = oToken.getText();
+            return oData;
+          }
+          return null;
+        }
+      },
+
+      /**
+       * Update model with current token data
+       * @private
+       */
+      _updateModelFromTokens: function () {
+        if (!this._oBindingConfig) {
+          return;
+        }
+
+        var oModel = this._getBindingModel();
+        if (!oModel) {
+          return;
+        }
+
+        var aTokens = this._oMultiInput.getTokens();
+        var oData = this._tokensToModelData(aTokens);
+        var sPath = this._oBindingConfig.path;
+
+        // Update model without triggering listener to avoid infinite loop
+        oModel.setProperty(sPath, oData);
+      },
+
+      // ==================== END: Binding Implementation ====================
 
       // Set up automatic property forwarding
       _setupPropertyForwarding: function () {
@@ -457,9 +696,19 @@ sap.ui.define(
         this._filterTable(oFilter);
       },
 
+      /**
+       * Enhanced onValueHelpOkPress to support binding
+       * @param {sap.ui.base.Event} oEvent The OK button press event
+       */
       onValueHelpOkPress: function (oEvent) {
         var aTokens = oEvent.getParameter("tokens");
         this._oMultiInput.setTokens(aTokens);
+
+        // NEW: Update model if binding is configured
+        if (this._oBindingConfig) {
+          this._updateModelFromTokens();
+        }
+
         this._oVHD.close();
 
         // Fire the custom event with selected tokens
@@ -609,10 +858,9 @@ sap.ui.define(
               }
             }
           }
-
-          // Update dialog tokens based on current selection
-          this._updateDialogTokensFromSelection(oTable, oDialog);
         }
+        // Update dialog tokens based on current selection
+        this._updateDialogTokensFromSelection(oTable, oDialog);
       },
 
       _updateDialogTokensFromSelection: function (oTable, oDialog) {
@@ -631,7 +879,7 @@ sap.ui.define(
 
         // For single selection mode, ensure only one token exists
         if (this.getSingleMode()) {
-          // Always clear existing tokens first
+          // Clear existing tokens first to get rid of auto formatting key (text)
           oDialog.setTokens([]);
 
           // Only process the last selected item (in case of multiple selections)
@@ -663,6 +911,7 @@ sap.ui.define(
           }
         } else {
           // For multi-selection mode, create tokens for all selected items
+          oDialog.setTokens([]); // Clear existing tokens first to get rid of auto formatting key (text)
           aSelectedIndices.forEach(
             function (iIndex) {
               var oContext;
@@ -845,7 +1094,7 @@ sap.ui.define(
         return this;
       },
 
-      // Token-related methods (forwarded to MultiInput)
+      // Token-related methods (forwarded to MultiInput) - ALL PRESERVED
       getTokens: function () {
         return this._oMultiInput.getTokens();
       },
