@@ -131,6 +131,7 @@ sap.ui.define(
 
     return Control.extend("yourAppId.controls.ValueHelperWrapper", {
       metadata: oMetadata,
+      _aTokens: [],
 
       init: function () {
         this._oMultiInput = new MultiInput({
@@ -304,27 +305,33 @@ sap.ui.define(
 
         var sIdProperty = this._oBindingConfig.idProperty || "id";
         var sDescProperty = this._oBindingConfig.descProperty || "desc";
+        var aCustomDataFields = this._oBindingConfig.customDataFields || [];
+
+        var processItem = function (oItem) {
+          if (oItem) {
+            var oToken = new Token({
+              key: oItem[sIdProperty],
+              text: oItem[sDescProperty] || oItem[sIdProperty]
+            });
+
+            // Add custom data for the extra fields using the data() method
+            if (aCustomDataFields && Array.isArray(aCustomDataFields)) {
+              aCustomDataFields.forEach(function (sFieldName) {
+                if (oItem[sFieldName]) {
+                  oToken.data(sFieldName, oItem[sFieldName]);
+                }
+              });
+            }
+            aTokens.push(oToken);
+          }
+        }.bind(this);
 
         // Handle array (multi-selection)
         if (Array.isArray(oData)) {
-          oData.forEach(
-            function (oItem) {
-              if (oItem) {
-                var oToken = new Token({
-                  key: oItem[sIdProperty],
-                  text: oItem[sDescProperty] || oItem[sIdProperty]
-                });
-                aTokens.push(oToken);
-              }
-            }.bind(this)
-          );
+          oData.forEach(processItem);
         } else if (typeof oData === "object") {
           // Handle single object (single selection)
-          var oToken = new Token({
-            key: oData[sIdProperty],
-            text: oData[sDescProperty] || oData[sIdProperty]
-          });
-          aTokens.push(oToken);
+          processItem(oData);
         }
 
         return aTokens;
@@ -343,29 +350,31 @@ sap.ui.define(
 
         var sIdProperty = this._oBindingConfig.idProperty || "id";
         var sDescProperty = this._oBindingConfig.descProperty || "desc";
+        var aCustomDataFields = this._oBindingConfig.customDataFields || [];
         var bMultiSelect = this._oBindingConfig.multiSelect || false;
 
-        if (bMultiSelect) {
-          // Return array for multi-selection
-          return aTokens.map(
-            function (oToken) {
-              var oData = {};
-              oData[sIdProperty] = oToken.getKey();
-              oData[sDescProperty] = oToken.getText();
-              return oData;
-            }.bind(this)
-          );
-        } else {
-          // Return single object for single selection
-          if (aTokens.length > 0) {
-            var oToken = aTokens[0];
+        var aData = aTokens.map(
+          function (oToken) {
             var oData = {};
             oData[sIdProperty] = oToken.getKey();
             oData[sDescProperty] = oToken.getText();
+
+            // Add custom data back to model data from the token's data map
+            var mData = oToken.getCustomData();
+            for (var sKey in mData) {
+              var index = Number(sKey);
+              if (index > -1) {
+                var sfield = aCustomDataFields[index];
+                var sValue = mData[sKey].getValue();
+                oData[sfield] = sValue;
+              }
+            }
+
             return oData;
-          }
-          return null;
-        }
+          }.bind(this)
+        );
+
+        return bMultiSelect ? aData : aData.length > 0 ? aData[0] : null;
       },
 
       /**
@@ -382,8 +391,8 @@ sap.ui.define(
           return;
         }
 
-        var aTokens = this._oMultiInput.getTokens();
-        var oData = this._tokensToModelData(aTokens);
+        // var aTokens = this._oMultiInput.getTokens();
+        var oData = this._tokensToModelData(this._aTokens);
         var sPath = this._oBindingConfig.path;
 
         // Update model without triggering listener to avoid infinite loop
@@ -701,7 +710,8 @@ sap.ui.define(
        * @param {sap.ui.base.Event} oEvent The OK button press event
        */
       onValueHelpOkPress: function (oEvent) {
-        var aTokens = oEvent.getParameter("tokens");
+        // var aTokens = oEvent.getParameter("tokens");
+        var aTokens = this._aTokens;
         this._oMultiInput.setTokens(aTokens);
 
         // NEW: Update model if binding is configured
@@ -877,6 +887,34 @@ sap.ui.define(
           });
         }
 
+        var that = this;
+
+        var createTokenFromContext = function (oContext) {
+          if (oContext) {
+            var oData = oContext.getObject();
+            var oToken = new Token({
+              key: oData[that._oConfig.selectedKey],
+              text:
+                oData[that._oConfig.selectedDescription] ||
+                oData[that._oConfig.selectedKey]
+            });
+
+            // Add custom data for the extra fields using the data() method
+            if (
+              that._oConfig.customDataFields &&
+              Array.isArray(that._oConfig.customDataFields)
+            ) {
+              that._oConfig.customDataFields.forEach(function (sFieldName) {
+                if (oData[sFieldName]) {
+                  oToken.data(sFieldName, oData[sFieldName]);
+                }
+              });
+            }
+            return oToken;
+          }
+          return null;
+        };
+
         // For single selection mode, ensure only one token exists
         if (this.getSingleMode()) {
           // Clear existing tokens first to get rid of auto formatting key (text)
@@ -898,51 +936,38 @@ sap.ui.define(
               }
             }
 
-            if (oContext) {
-              var oData = oContext.getObject();
-              var oToken = new Token({
-                key: oData[this._oConfig.selectedKey],
-                text:
-                  oData[this._oConfig.selectedDescription] ||
-                  oData[this._oConfig.selectedKey]
-              });
+            var oToken = createTokenFromContext(oContext);
+            if (oToken) {
               aTokens.push(oToken);
             }
           }
         } else {
           // For multi-selection mode, create tokens for all selected items
           oDialog.setTokens([]); // Clear existing tokens first to get rid of auto formatting key (text)
-          aSelectedIndices.forEach(
-            function (iIndex) {
-              var oContext;
+          aSelectedIndices.forEach(function (iIndex) {
+            var oContext;
 
-              if (oTable.getContextByIndex) {
-                // sap.ui.table.Table
-                oContext = oTable.getContextByIndex(iIndex);
-              } else if (oTable.getItems) {
-                // sap.m.Table
-                var oItem = oTable.getItems()[iIndex];
-                if (oItem) {
-                  oContext = oItem.getBindingContext();
-                }
+            if (oTable.getContextByIndex) {
+              // sap.ui.table.Table
+              oContext = oTable.getContextByIndex(iIndex);
+            } else if (oTable.getItems) {
+              // sap.m.Table
+              var oItem = oTable.getItems()[iIndex];
+              if (oItem) {
+                oContext = oItem.getBindingContext();
               }
+            }
 
-              if (oContext) {
-                var oData = oContext.getObject();
-                var oToken = new Token({
-                  key: oData[this._oConfig.selectedKey],
-                  text:
-                    oData[this._oConfig.selectedDescription] ||
-                    oData[this._oConfig.selectedKey]
-                });
-                aTokens.push(oToken);
-              }
-            }.bind(this)
-          );
+            var oToken = createTokenFromContext(oContext);
+            if (oToken) {
+              aTokens.push(oToken);
+            }
+          });
         }
 
         // Set the tokens (replacing any existing ones)
         oDialog.setTokens(aTokens);
+        this._aTokens = aTokens;
       },
 
       _handleDataRequested: function (oTable) {
